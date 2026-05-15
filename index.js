@@ -9,7 +9,6 @@ const axios = require("axios")
 const P = require("pino")
 
 const PREFIX = "#"
-
 const OWNER_NUMBER = "972527066516@s.whatsapp.net"
 
 const dbFile = "./users.json"
@@ -25,12 +24,37 @@ async function startBot() {
   const sock = makeWASocket({
     auth: state,
     logger: P({ level: "silent" }),
-    printQRInTerminal: true
+    qrTimeout: 60000
   })
 
   sock.ev.on("creds.update", saveCreds)
 
+  // عرض QR في اللوق بشكل مضمون
+  sock.ev.on("connection.update", (update) => {
+    if (update.qr) {
+      console.log("\n===== QR CODE =====\n")
+      console.log(update.qr)
+      console.log("\n===================\n")
+    }
+
+    if (update.connection === "open") {
+      console.log("BOT RUNNING 🔥")
+
+      sock.sendMessage(OWNER_NUMBER, {
+        text: "👋 مرحبا بالمطور"
+      })
+    }
+
+    if (update.connection === "close") {
+      const shouldReconnect =
+        update.lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut
+
+      if (shouldReconnect) startBot()
+    }
+  })
+
   sock.ev.on("messages.upsert", async ({ messages }) => {
+
     const msg = messages[0]
     if (!msg.message) return
 
@@ -83,24 +107,9 @@ async function startBot() {
     if (command === "مساعدة") {
       return reply(`#راتب\n#فلوسي\n#بنك`)
     }
+
   })
 
-  sock.ev.on("connection.update", ({ connection, lastDisconnect }) => {
-    if (connection === "open") {
-      console.log("BOT RUNNING 🔥")
-
-      sock.sendMessage(OWNER_NUMBER, {
-        text: "👋 مرحبا بالمطور"
-      })
-    }
-
-    if (connection === "close") {
-      const shouldReconnect =
-        lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut
-
-      if (shouldReconnect) startBot()
-    }
-  })
 }
 
 startBot()
