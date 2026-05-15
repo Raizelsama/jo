@@ -7,6 +7,7 @@ const {
 const fs = require("fs-extra")
 const axios = require("axios")
 const P = require("pino")
+const qrcode = require("qrcode-terminal")
 
 const PREFIX = "#"
 const OWNER_NUMBER = "972527066516@s.whatsapp.net"
@@ -36,17 +37,13 @@ async function startBot() {
 
     const { connection, lastDisconnect, qr } = update
 
-    // رابط صورة QR
+    // QR واضح وكبير
     if (qr) {
+      console.clear()
 
-      console.log("\n===== QR IMAGE =====\n")
-
-      console.log(
-        "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" +
-        encodeURIComponent(qr)
-      )
-
-      console.log("\n====================\n")
+      qrcode.generate(qr, {
+        small: false
+      })
     }
 
     // عند الاتصال
