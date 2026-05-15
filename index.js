@@ -7,7 +7,6 @@ const {
 const fs = require("fs-extra")
 const axios = require("axios")
 const P = require("pino")
-const qrcode = require("qrcode-terminal")
 
 const PREFIX = "#"
 const OWNER_NUMBER = "972527066516@s.whatsapp.net"
@@ -37,11 +36,17 @@ async function startBot() {
 
     const { connection, lastDisconnect, qr } = update
 
-    // QR الحقيقي
+    // رابط صورة QR
     if (qr) {
-      console.log("\n===== QR CODE =====\n")
-      qrcode.generate(qr, { small: true })
-      console.log("\n===================\n")
+
+      console.log("\n===== QR IMAGE =====\n")
+
+      console.log(
+        "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" +
+        encodeURIComponent(qr)
+      )
+
+      console.log("\n====================\n")
     }
 
     // عند الاتصال
@@ -54,7 +59,7 @@ async function startBot() {
       })
     }
 
-    // إعادة تشغيل تلقائي
+    // إعادة الاتصال
     if (connection === "close") {
 
       const shouldReconnect =
