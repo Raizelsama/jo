@@ -10,7 +10,6 @@ const P = require("pino")
 
 const PREFIX = "#"
 
-// رقم المطور
 const OWNER_NUMBER = "972527066516@s.whatsapp.net"
 
 const dbFile = "./users.json"
@@ -32,7 +31,6 @@ async function startBot() {
   sock.ev.on("creds.update", saveCreds)
 
   sock.ev.on("messages.upsert", async ({ messages }) => {
-
     const msg = messages[0]
     if (!msg.message) return
 
@@ -60,7 +58,6 @@ async function startBot() {
     const reply = (t) =>
       sock.sendMessage(from, { text: t }, { quoted: msg })
 
-    // راتب
     if (command === "راتب") {
       const now = Date.now()
       const cooldown = 12 * 60 * 60 * 1000
@@ -75,28 +72,35 @@ async function startBot() {
       return reply("💸 استلمت 500 ريال")
     }
 
-    // فلوسي
     if (command === "فلوسي") {
       return reply(`💰 الكاش: ${user.money}\n🏦 البنك: ${user.bank}`)
     }
 
-    // بنك
     if (command === "بنك") {
       return reply(`🏦 البنك\n💵 ${user.money}\n🏦 ${user.bank}`)
     }
 
-    // ايداع
-    if (command === "ايداع") {
-      let amount = parseInt(args[0])
-      if (!amount) return reply("اكتب مبلغ")
-      if (amount > user.money) return reply("ما معك فلوس")
+    if (command === "مساعدة") {
+      return reply(`#راتب\n#فلوسي\n#بنك`)
+    }
+  })
 
-      user.money -= amount
-      user.bank += amount
-      saveDB(db)
+  sock.ev.on("connection.update", ({ connection, lastDisconnect }) => {
+    if (connection === "open") {
+      console.log("BOT RUNNING 🔥")
 
-      return reply("🏦 تم الايداع")
+      sock.sendMessage(OWNER_NUMBER, {
+        text: "👋 مرحبا بالمطور"
+      })
     }
 
-    // سحب
-    if (command === "
+    if (connection === "close") {
+      const shouldReconnect =
+        lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut
+
+      if (shouldReconnect) startBot()
+    }
+  })
+}
+
+startBot()
