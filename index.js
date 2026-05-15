@@ -7,49 +7,63 @@ const {
 const fs = require("fs-extra")
 const axios = require("axios")
 const P = require("pino")
+const qrcode = require("qrcode-terminal")
 
 const PREFIX = "#"
 const OWNER_NUMBER = "972527066516@s.whatsapp.net"
 
 const dbFile = "./users.json"
-if (!fs.existsSync(dbFile)) fs.writeJsonSync(dbFile, {})
+
+if (!fs.existsSync(dbFile)) {
+  fs.writeJsonSync(dbFile, {})
+}
 
 const loadDB = () => fs.readJsonSync(dbFile)
 const saveDB = (d) => fs.writeJsonSync(dbFile, d)
 
 async function startBot() {
 
-  const { state, saveCreds } = await useMultiFileAuthState("session")
+  const { state, saveCreds } =
+    await useMultiFileAuthState("session")
 
   const sock = makeWASocket({
     auth: state,
-    logger: P({ level: "silent" }),
-    qrTimeout: 60000
+    logger: P({ level: "silent" })
   })
 
   sock.ev.on("creds.update", saveCreds)
 
-  // عرض QR في اللوق بشكل مضمون
-  sock.ev.on("connection.update", (update) => {
-    if (update.qr) {
+  sock.ev.on("connection.update", async (update) => {
+
+    const { connection, lastDisconnect, qr } = update
+
+    // QR الحقيقي
+    if (qr) {
       console.log("\n===== QR CODE =====\n")
-      console.log(update.qr)
+      qrcode.generate(qr, { small: true })
       console.log("\n===================\n")
     }
 
-    if (update.connection === "open") {
+    // عند الاتصال
+    if (connection === "open") {
+
       console.log("BOT RUNNING 🔥")
 
-      sock.sendMessage(OWNER_NUMBER, {
+      await sock.sendMessage(OWNER_NUMBER, {
         text: "👋 مرحبا بالمطور"
       })
     }
 
-    if (update.connection === "close") {
-      const shouldReconnect =
-        update.lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut
+    // إعادة تشغيل تلقائي
+    if (connection === "close") {
 
-      if (shouldReconnect) startBot()
+      const shouldReconnect =
+        lastDisconnect?.error?.output?.statusCode !==
+        DisconnectReason.loggedOut
+
+      if (shouldReconnect) {
+        startBot()
+      }
     }
   })
 
@@ -68,48 +82,115 @@ async function startBot() {
 
     if (!text.startsWith(PREFIX)) return
 
-    const args = text.slice(1).trim().split(" ")
-    const command = args.shift().toLowerCase()
+    const args =
+      text.slice(1).trim().split(" ")
+
+    const command =
+      args.shift().toLowerCase()
 
     let db = loadDB()
 
     if (!db[sender]) {
-      db[sender] = { money: 1000, bank: 0, lastSalary: 0 }
+      db[sender] = {
+        money: 1000,
+        bank: 0,
+        lastSalary: 0
+      }
     }
 
     const user = db[sender]
 
-    const reply = (t) =>
-      sock.sendMessage(from, { text: t }, { quoted: msg })
+    const reply = async (t) => {
+      await sock.sendMessage(
+        from,
+        { text: t },
+        { quoted: msg }
+      )
+    }
 
+    // راتب
     if (command === "راتب") {
-      const now = Date.now()
-      const cooldown = 12 * 60 * 60 * 1000
 
-      if (now - user.lastSalary < cooldown)
+      const now = Date.now()
+      const cooldown =
+        12 * 60 * 60 * 1000
+
+      if (
+        now - user.lastSalary <
+        cooldown
+      ) {
         return reply("⏳ انتظر الراتب")
+      }
 
       user.money += 500
       user.lastSalary = now
+
       saveDB(db)
 
       return reply("💸 استلمت 500 ريال")
     }
 
+    // فلوسي
     if (command === "فلوسي") {
-      return reply(`💰 الكاش: ${user.money}\n🏦 البنك: ${user.bank}`)
+
+      return reply(
+        `💰 الكاش: ${user.money}\n🏦 البنك: ${user.bank}`
+      )
     }
 
+    // بنك
     if (command === "بنك") {
-      return reply(`🏦 البنك\n💵 ${user.money}\n🏦 ${user.bank}`)
+
+      return reply(
+        `🏦 البنك\n💵 ${user.money}\n🏦 ${user.bank}`
+      )
     }
 
+    // ذكاء
+    if (command === "ذكاء") {
+
+      const q = args.join(" ")
+
+      if (!q)
+        return reply("اكتب سؤال")
+
+      try {
+
+        const res =
+          await axios.get(
+            "https://api.simsimi.vn/v2/simtalk",
+            {
+              params: {
+                text: q,
+                lc: "ar"
+              }
+            }
+          )
+
+        return reply(
+          "🤖 " + res.data.message
+        )
+
+      } catch {
+
+        return reply(
+          "الذكاء مشغول"
+        )
+      }
+    }
+
+    // مساعدة
     if (command === "مساعدة") {
-      return reply(`#راتب\n#فلوسي\n#بنك`)
+
+      return reply(
+`#راتب
+#فلوسي
+#بنك
+#ذكاء`
+      )
     }
 
   })
-
 }
 
 startBot()
