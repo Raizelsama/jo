@@ -9,10 +9,11 @@ const axios = require("axios")
 const P = require("pino")
 
 const PREFIX = "#"
-const NUMBER = "+972527066516"
+
+// رقم المطور
+const OWNER_NUMBER = "972527066516@s.whatsapp.net"
 
 const dbFile = "./users.json"
-
 if (!fs.existsSync(dbFile)) fs.writeJsonSync(dbFile, {})
 
 const loadDB = () => fs.readJsonSync(dbFile)
@@ -24,24 +25,11 @@ async function startBot() {
 
   const sock = makeWASocket({
     auth: state,
-    logger: P({ level: "silent" })
+    logger: P({ level: "silent" }),
+    printQRInTerminal: true
   })
 
   sock.ev.on("creds.update", saveCreds)
-
-  // Pairing Code (بدون QR)
-  if (!sock.authState.creds.registered) {
-    setTimeout(async () => {
-      try {
-        const code = await sock.requestPairingCode(NUMBER)
-        console.log("====================")
-        console.log("PAIRING CODE:", code)
-        console.log("====================")
-      } catch (e) {
-        console.log("فشل توليد الكود")
-      }
-    }, 3000)
-  }
 
   sock.ev.on("messages.upsert", async ({ messages }) => {
 
@@ -51,7 +39,10 @@ async function startBot() {
     const from = msg.key.remoteJid
     const sender = msg.key.participant || from
 
-    const text = msg.message.conversation || msg.message.extendedTextMessage?.text || ""
+    const text =
+      msg.message.conversation ||
+      msg.message.extendedTextMessage?.text ||
+      ""
 
     if (!text.startsWith(PREFIX)) return
 
@@ -66,7 +57,8 @@ async function startBot() {
 
     const user = db[sender]
 
-    const reply = (t) => sock.sendMessage(from, { text: t }, { quoted: msg })
+    const reply = (t) =>
+      sock.sendMessage(from, { text: t }, { quoted: msg })
 
     // راتب
     if (command === "راتب") {
@@ -107,50 +99,4 @@ async function startBot() {
     }
 
     // سحب
-    if (command === "سحب") {
-      let amount = parseInt(args[0])
-      if (!amount) return reply("اكتب مبلغ")
-      if (amount > user.bank) return reply("رصيد البنك قليل")
-
-      user.bank -= amount
-      user.money += amount
-      saveDB(db)
-
-      return reply("💵 تم السحب")
-    }
-
-    // ذكاء
-    if (command === "ذكاء") {
-      let q = args.join(" ")
-      if (!q) return reply("اكتب سؤال")
-
-      try {
-        const res = await axios.get("https://api.simsimi.vn/v2/simtalk", {
-          params: { text: q, lc: "ar" }
-        })
-
-        return reply("🤖 " + res.data.message)
-      } catch {
-        return reply("الذكاء مشغول")
-      }
-    }
-
-    // مساعدة
-    if (command === "مساعدة") {
-      return reply(`#راتب\n#فلوسي\n#بنك\n#ايداع\n#سحب\n#ذكاء`)
-    }
-  })
-
-  sock.ev.on("connection.update", ({ connection, lastDisconnect }) => {
-    if (connection === "close") {
-      const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut
-      if (shouldReconnect) startBot()
-    }
-
-    if (connection === "open") {
-      console.log("BOT RUNNING 🔥")
-    }
-  })
-}
-
-startBot()
+    if (command === "
