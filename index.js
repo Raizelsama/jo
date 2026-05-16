@@ -7,7 +7,6 @@ const {
 const fs = require("fs-extra")
 const axios = require("axios")
 const P = require("pino")
-const { createCanvas, loadImage } = require("canvas")
 
 // رقم البوت
 const PHONE_NUMBER = "9647886281208"
@@ -34,6 +33,25 @@ function formatTime(ms) {
   let m = Math.floor((ms % 3600000) / 60000)
   return `${h} ساعة و ${m} دقيقة`
 }
+
+// شخصيات البوت
+const botReplies = [
+  "واضح القروب فوضى",
+  "ركزوا شوي",
+  "يا ساتر على الكلام",
+  "الصلاة على النبي",
+  "استغفروا الله",
+  "القروب هادئ اليوم",
+  "وش السالفة هنا"
+]
+
+const azkar = [
+  "الصلاة على النبي",
+  "استغفر الله",
+  "سبحان الله",
+  "لا اله الا الله",
+  "سبحان الله وبحمده"
+]
 
 async function startBot() {
 
@@ -121,26 +139,17 @@ PAIRING CODE: ${code}
       await sock.sendMessage(from, { text: t }, { quoted: msg })
     }
 
-    // =========================
-    // سؤال عن المطور (اللي طلبته)
-    // =========================
+    // ================= سؤال عن المطور =================
 
     if (
       lower.includes("المطور") ||
       lower.includes("من المطور") ||
       lower.includes("مين المطور")
     ) {
-
-      return reply(
-`👑 المطور هو:
-
-📱 ${OWNER_PHONE}`
-      )
+      return reply("رقم المطور: " + OWNER_PHONE)
     }
 
-    // =========================
-    // اوامر المساعدة
-    // =========================
+    // ================= اوامر =================
 
     if (command === "مساعدة" || command === "اوامر") {
 
@@ -162,6 +171,14 @@ PAIRING CODE: ${code}
 👑 مطور:
 مطور`
       )
+    }
+
+    if (command === "مطور") {
+
+      if (sender !== OWNER_NUMBER)
+        return reply("هذا الأمر للمطور فقط")
+
+      return reply("لوحة المطور")
     }
 
     // ================= راتب =================
@@ -217,6 +234,19 @@ PAIRING CODE: ${code}
 
       } catch {
         return reply("الذكاء مشغول")
+      }
+    }
+
+    // ================= تفاعل بسيط =================
+
+    if (from.endsWith("@g.us")) {
+
+      if (Math.random() < 0.05) {
+        return reply(rand(botReplies))
+      }
+
+      if (Math.random() < 0.02) {
+        return reply(rand(azkar))
       }
     }
 
