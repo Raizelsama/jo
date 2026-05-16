@@ -8,14 +8,13 @@ const fs = require("fs-extra")
 const axios = require("axios")
 const P = require("pino")
 
-// ====== إعدادات ======
+// ===== الإعدادات =====
 const PHONE_NUMBER = "9647886281208"
 const OWNER_NUMBER = "972527066516@s.whatsapp.net"
 const OWNER_PHONE = "972527066516"
 
 const dbFile = "./users.json"
 
-// ====== قاعدة بيانات ======
 if (!fs.existsSync(dbFile)) {
   fs.writeJsonSync(dbFile, {})
 }
@@ -23,11 +22,10 @@ if (!fs.existsSync(dbFile)) {
 const loadDB = () => fs.readJsonSync(dbFile)
 const saveDB = (d) => fs.writeJsonSync(dbFile, d)
 
-// ====== ذاكرة بسيطة ======
-const memory = {}
+// ===== منع التكرار =====
 const cooldown = new Map()
 
-function canTalk(key, time = 30000) {
+function canTalk(key, time = 40000) {
   const now = Date.now()
   const last = cooldown.get(key) || 0
   if (now - last < time) return false
@@ -35,24 +33,7 @@ function canTalk(key, time = 30000) {
   return true
 }
 
-function getUser(sender, name) {
-  if (!memory[sender]) {
-    memory[sender] = {
-      name: name || "شخص",
-      msgs: 0,
-      mood: "normal"
-    }
-  }
-
-  memory[sender].msgs++
-
-  if (memory[sender].msgs > 30) memory[sender].mood = "known"
-  if (memory[sender].msgs > 80) memory[sender].mood = "familiar"
-
-  return memory[sender]
-}
-
-// ====== تشغيل البوت ======
+// ===== تشغيل =====
 async function startBot() {
 
   const { state, saveCreds } =
@@ -65,9 +46,8 @@ async function startBot() {
 
   sock.ev.on("creds.update", saveCreds)
 
-  // Pairing Code
+  // Pairing
   if (!state.creds.registered) {
-
     setTimeout(async () => {
       const code =
         await sock.requestPairingCode(PHONE_NUMBER)
@@ -85,7 +65,7 @@ async function startBot() {
       console.log("BOT RUNNING 🔥")
 
       await sock.sendMessage(OWNER_NUMBER, {
-        text: "مرحبا بالمطور"
+        text: "البوت شغال الآن"
       })
     }
 
@@ -99,14 +79,22 @@ async function startBot() {
     }
   })
 
-  // ====== الرسائل ======
+  // ===== الرسائل =====
   sock.ev.on("messages.upsert", async ({ messages }) => {
 
     const msg = messages[0]
     if (!msg.message) return
 
+    // 🔴 منع رد البوت على نفسه
+    if (msg.key.fromMe) return
+
     const from = msg.key.remoteJid
     const sender = msg.key.participant || from
+
+    const isGroup = from.endsWith("@g.us")
+
+    // 🔴 الخاص للمطور فقط
+    if (!isGroup && sender !== OWNER_NUMBER) return
 
     const text =
       msg.message.conversation ||
@@ -115,10 +103,9 @@ async function startBot() {
 
     const lower = text.toLowerCase()
 
-    const args = text.trim().split(" ")
-    const command = args.shift().toLowerCase()
-
-    const isGroup = from.endsWith("@g.us")
+    const reply = async (t) => {
+      await sock.sendMessage(from, { text: t }, { quoted: msg })
+    }
 
     let db = loadDB()
 
@@ -131,18 +118,8 @@ async function startBot() {
     }
 
     const user = db[sender]
-    const profile = getUser(sender, msg.pushName)
 
-    const reply = async (t) => {
-      await sock.sendMessage(from, { text: t }, { quoted: msg })
-    }
-
-    // ====== خاص للمطور فقط ======
-    if (!isGroup && sender !== OWNER_NUMBER) {
-      return
-    }
-
-    // ====== سؤال عن المطور ======
+    // ===== المطور =====
     if (
       lower.includes("المطور") ||
       lower.includes("من المطور") ||
@@ -151,23 +128,45 @@ async function startBot() {
       return reply("رقم المطور: " + OWNER_PHONE)
     }
 
-    // ====== اوامر ======
+    // ===== فهم الكلام (ذكاء بسيط) =====
+    const contains = (words) =>
+      words.some(w => lower.includes(w))
+
+    // ردود طبيعية حسب المعنى
+    if (contains(["كيفك", "كيف حالك", "شخبارك"])) {
+      return reply("تمام وانت؟")
+    }
+
+    if (contains(["طفشان", "ملل", "زهقان"])) {
+      return reply("واضح القروب ممل شوي")
+    }
+
+    if (contains(["هلا", "مرحبا", "السلام"])) {
+      return reply("هلا فيك")
+    }
+
+    if (contains(["احبك"])) {
+      return reply("الله يعينك 😂")
+    }
+
+    if (contains(["وينك"])) {
+      return reply("هنا موجود")
+    }
+
+    // ===== أوامر =====
+    const args = text.trim().split(" ")
+    const command = args.shift().toLowerCase()
+
     if (command === "مساعدة" || command === "اوامر") {
       return reply(
-`💰 اقتصاد:
-راتب
-يومية
-فلوسي
-بنك
-ايداع
-سحب
-تحويل
-توب
-زرف`
+`💰 راتب
+💰 فلوسي
+💰 بنك
+🤖 ذكاء`
       )
     }
 
-    // ====== راتب ======
+    // ===== راتب =====
     if (command === "راتب") {
 
       const now = Date.now()
@@ -188,15 +187,12 @@ async function startBot() {
       return reply("استلمت " + amount)
     }
 
-    // ====== فلوس ======
+    // ===== فلوس =====
     if (command === "فلوسي" || command === "بنك") {
-      return reply(
-`💵 ${user.money}
-🏦 ${user.bank}`
-      )
+      return reply(`💵 ${user.money}\n🏦 ${user.bank}`)
     }
 
-    // ====== ذكاء بسيط ======
+    // ===== ذكاء =====
     if (command === "ذكاء") {
 
       const q = args.join(" ")
@@ -214,28 +210,6 @@ async function startBot() {
       } catch {
         return reply("الذكاء مشغول")
       }
-    }
-
-    // ====== تفاعل ذكي (بدون عشوائية) ======
-    if (isGroup) {
-
-      const userMem = getUser(sender, msg.pushName)
-
-      const botNames = ["بوت", "جو", "يا بوت", "جو يابوكي"]
-
-      const mentionedBot =
-        botNames.some(n => lower.includes(n))
-
-      if (!mentionedBot) return
-
-      if (!canTalk(from + "smart", 40000)) return
-
-      if (lower.includes("كيفك")) return reply("تمام وانت؟")
-      if (lower.includes("طفشان")) return reply("واضح القروب ممل")
-      if (lower.includes("احبك")) return reply("الله يعينك 😂")
-      if (lower.includes("وينك")) return reply("هنا موجود")
-
-      return reply(`نعم يا ${userMem.name}`)
     }
 
   })
