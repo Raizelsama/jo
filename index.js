@@ -15,6 +15,7 @@ const PHONE_NUMBER = "9647886281208"
 const OWNER_NUMBER = "972527066516@s.whatsapp.net"
 const OWNER_PHONE = "972527066516"
 
+// قاعدة بيانات
 const dbFile = "./users.json"
 
 if (!fs.existsSync(dbFile)) {
@@ -23,6 +24,47 @@ if (!fs.existsSync(dbFile)) {
 
 const loadDB = () => fs.readJsonSync(dbFile)
 const saveDB = (d) => fs.writeJsonSync(dbFile, d)
+
+// ================= ذاكرة البوت =================
+
+const memory = {}
+const cooldown = new Map()
+
+function canTalk(key, time = 50000) {
+  const now = Date.now()
+  const last = cooldown.get(key) || 0
+  if (now - last < time) return false
+  cooldown.set(key, now)
+  return true
+}
+
+function getUser(sender, name) {
+  if (!memory[sender]) {
+    memory[sender] = {
+      name: name || "شخص",
+      msgs: 0,
+      mood: "normal"
+    }
+  }
+
+  memory[sender].msgs++
+
+  if (memory[sender].msgs > 30) memory[sender].mood = "known"
+  if (memory[sender].msgs > 80) memory[sender].mood = "familiar"
+
+  return memory[sender]
+}
+
+// ================= ردود شخصية =================
+
+const botReplies = [
+  "القروب هادئ اليوم",
+  "واضح فيه ملل هنا",
+  "ركزوا شوي",
+  "يا ساتر على الكلام",
+  "استغفروا ربكم",
+  "الصلاة على النبي"
+]
 
 function rand(arr) {
   return arr[Math.floor(Math.random() * arr.length)]
@@ -34,24 +76,7 @@ function formatTime(ms) {
   return `${h} ساعة و ${m} دقيقة`
 }
 
-// شخصيات البوت
-const botReplies = [
-  "واضح القروب فوضى",
-  "ركزوا شوي",
-  "يا ساتر على الكلام",
-  "الصلاة على النبي",
-  "استغفروا الله",
-  "القروب هادئ اليوم",
-  "وش السالفة هنا"
-]
-
-const azkar = [
-  "الصلاة على النبي",
-  "استغفر الله",
-  "سبحان الله",
-  "لا اله الا الله",
-  "سبحان الله وبحمده"
-]
+// ================= تشغيل البوت =================
 
 async function startBot() {
 
@@ -65,20 +90,13 @@ async function startBot() {
 
   sock.ev.on("creds.update", saveCreds)
 
-  // Pairing Code
+  // Pairing
   if (!state.creds.registered) {
-
     setTimeout(async () => {
-
       const code =
         await sock.requestPairingCode(PHONE_NUMBER)
 
-      console.log(`
-====================
-PAIRING CODE: ${code}
-====================
-`)
-
+      console.log("PAIRING CODE:", code)
     }, 5000)
   }
 
@@ -87,7 +105,6 @@ PAIRING CODE: ${code}
     const { connection, lastDisconnect } = update
 
     if (connection === "open") {
-
       console.log("BOT RUNNING 🔥")
 
       await sock.sendMessage(OWNER_NUMBER, {
@@ -104,6 +121,8 @@ PAIRING CODE: ${code}
       if (reconnect) startBot()
     }
   })
+
+  // ================= الرسائل =================
 
   sock.ev.on("messages.upsert", async ({ messages }) => {
 
@@ -134,25 +153,28 @@ PAIRING CODE: ${code}
     }
 
     const user = db[sender]
+    const profile = getUser(sender, msg.pushName)
 
     const reply = async (t) => {
       await sock.sendMessage(from, { text: t }, { quoted: msg })
     }
 
-    // ================= سؤال عن المطور =================
+    // ================= المطور =================
 
     if (
       lower.includes("المطور") ||
       lower.includes("من المطور") ||
       lower.includes("مين المطور")
     ) {
+
+      if (!canTalk(from + "dev", 60000)) return
+
       return reply("رقم المطور: " + OWNER_PHONE)
     }
 
     // ================= اوامر =================
 
     if (command === "مساعدة" || command === "اوامر") {
-
       return reply(
 `💰 اقتصاد:
 راتب
@@ -163,35 +185,21 @@ PAIRING CODE: ${code}
 سحب
 تحويل
 توب
-زرف
-
-🤖 ذكاء:
-ذكاء
-
-👑 مطور:
-مطور`
+زرف`
       )
-    }
-
-    if (command === "مطور") {
-
-      if (sender !== OWNER_NUMBER)
-        return reply("هذا الأمر للمطور فقط")
-
-      return reply("لوحة المطور")
     }
 
     // ================= راتب =================
 
     if (command === "راتب") {
 
-      const cooldown = 2 * 60 * 60 * 1000
       const now = Date.now()
+      const cooldownTime = 2 * 60 * 60 * 1000
 
-      if (now - user.lastSalary < cooldown) {
+      if (now - user.lastSalary < cooldownTime) {
         return reply(
           "انتظر: " +
-          formatTime(cooldown - (now - user.lastSalary))
+          formatTime(cooldownTime - (now - user.lastSalary))
         )
       }
 
@@ -209,14 +217,13 @@ PAIRING CODE: ${code}
     // ================= فلوس =================
 
     if (command === "فلوسي" || command === "بنك") {
-
       return reply(
 `💵 ${user.money}
 🏦 ${user.bank}`
       )
     }
 
-    // ================= ذكاء =================
+    // ================= ذكاء بسيط =================
 
     if (command === "ذكاء") {
 
@@ -237,16 +244,35 @@ PAIRING CODE: ${code}
       }
     }
 
-    // ================= تفاعل بسيط =================
+    // ================= ردود طبيعية =================
+
+    if (lower.includes("كيفك")) return reply("تمام وانت؟")
+    if (lower.includes("طفشان")) return reply("واضح القروب ممل")
+    if (lower.includes("هلا")) return reply("هلا")
+    if (lower.includes("احبك")) return reply("الله يعينك 😂")
+    if (lower.includes("وينك")) return reply("هنا")
+
+    // ================= تفاعل واقعي =================
 
     if (from.endsWith("@g.us")) {
 
-      if (Math.random() < 0.05) {
-        return reply(rand(botReplies))
-      }
+      const userMem = getUser(sender, msg.pushName)
 
-      if (Math.random() < 0.02) {
-        return reply(rand(azkar))
+      if (!canTalk(from + "smart", 60000)) return
+
+      const chance = Math.random()
+
+      if (chance < 0.01) {
+
+        if (userMem.mood === "familiar") {
+          return reply(`رجعت لنا يا ${userMem.name} 😏`)
+        }
+
+        if (userMem.mood === "known") {
+          return reply(`هلا ${userMem.name}`)
+        }
+
+        return reply(rand(botReplies))
       }
     }
 
