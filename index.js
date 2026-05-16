@@ -7,9 +7,13 @@ const {
 const fs = require("fs-extra")
 const axios = require("axios")
 const P = require("pino")
-const qrcode = require("qrcode-terminal")
 
 const PREFIX = "#"
+
+// رقم البوت
+const PHONE_NUMBER = "9647886281208"
+
+// رقم المطور
 const OWNER_NUMBER = "972527066516@s.whatsapp.net"
 
 const dbFile = "./users.json"
@@ -33,18 +37,28 @@ async function startBot() {
 
   sock.ev.on("creds.update", saveCreds)
 
+  // Pairing Code
+  if (!state.creds.registered) {
+
+    setTimeout(async () => {
+
+      const code =
+        await sock.requestPairingCode(
+          PHONE_NUMBER
+        )
+
+      console.log(`
+====================
+PAIRING CODE: ${code}
+====================
+`)
+
+    }, 5000)
+  }
+
   sock.ev.on("connection.update", async (update) => {
 
-    const { connection, lastDisconnect, qr } = update
-
-    // QR واضح وكبير
-    if (qr) {
-      console.clear()
-
-      qrcode.generate(qr, {
-        small: false
-      })
-    }
+    const { connection, lastDisconnect } = update
 
     // عند الاتصال
     if (connection === "open") {
