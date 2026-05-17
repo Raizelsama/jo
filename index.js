@@ -1,414 +1,178 @@
 const {
   default: makeWASocket,
   useMultiFileAuthState,
-  DisconnectReason
-} = require("@whiskeysockets/baileys")
+  DisconnectReason,
+  downloadContentFromMessage
+} = require('@whiskeysockets/baileys')
 
-const fs = require("fs-extra")
-const axios = require("axios")
-const P = require("pino")
+const fs = require('fs-extra')
+const P = require('pino')
+const axios = require('axios')
+const path = require('path')
+const ffmpeg = require('fluent-ffmpeg')
+const ffmpegPath = require('ffmpeg-static')
 
-const OWNER_NUMBER = "972527066516@s.whatsapp.net"
-const PHONE_NUMBER = "9647886281208"
+ffmpeg.setFfmpegPath(ffmpegPath)
 
-const dbFile = "./users.json"
-
-if (!fs.existsSync(dbFile)) {
-  fs.writeJsonSync(dbFile, {})
-}
-
-const loadDB = () => fs.readJsonSync(dbFile)
-const saveDB = (d) => fs.writeJsonSync(dbFile, d)
+const OWNER = '972527066516@s.whatsapp.net'
+const PHONE_NUMBER = '9647886281208'
 
 async function startBot() {
 
-  const { state, saveCreds } =
-    await useMultiFileAuthState("session")
+const { state, saveCreds } = await useMultiFileAuthState('session')
 
-  const sock = makeWASocket({
-    auth: state,
-    logger: P({ level: "silent" })
-  })
+const sock = makeWASocket({
+  auth: state,
+  logger: P({ level: 'silent' })
+})
 
-  sock.ev.on("creds.update", saveCreds)
+sock.ev.on('creds.update', saveCreds)
 
-  // ===== pairing =====
-  if (!state.creds.registered) {
+if (!state.creds.registered) {
+setTimeout(async () => {
+const code = await sock.requestPairingCode(PHONE_NUMBER)
+console.log('PAIR CODE:', code)
+}, 3000)
+}
 
-    setTimeout(async () => {
+sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
 
-      const code =
-        await sock.requestPairingCode(PHONE_NUMBER)
+if (connection === 'open') {
+console.log('JO BOT ONLINE 🔥')
+}
 
-      console.log("PAIRING CODE:", code)
+if (connection === 'close') {
+const reconnect =
+lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut
 
-    }, 3000)
-  }
+if (reconnect) startBot()
+}
+})
 
-  // ===== connection =====
-  sock.ev.on("connection.update", (update) => {
+sock.ev.on('messages.upsert', async ({ messages }) => {
 
-    const { connection, lastDisconnect } = update
+try {
 
-    if (connection === "open") {
-      console.log("BOT ONLINE 🔥")
-    }
+const m = messages[0]
+if (!m.message) return
+if (m.key.fromMe) return
 
-    if (connection === "close") {
+const from = m.key.remoteJid
 
-      const reconnect =
-        lastDisconnect?.error?.output?.statusCode !==
-        DisconnectReason.loggedOut
+const text =
+m.message.conversation ||
+m.message.extendedTextMessage?.text ||
+''
 
-      if (reconnect) startBot()
-    }
-  })
+const reply = (txt) => sock.sendMessage(from, { text: txt }, { quoted: m })
 
-  // ===== messages =====
-  sock.ev.on("messages.upsert", async ({ messages }) => {
+// ===== اوامر =====
 
-    const msg = messages[0]
+if (text === '.menu') {
+return reply(`
+╭── JO YABOKI BOT
+│
+├ .ai
+├ .sticker
+├ .ping
+├ .owner
+│
+╰──────────
+`)
+}
 
-    if (!msg.message) return
-    if (msg.key.fromMe) return
+// ===== ping =====
 
-    const from = msg.key.remoteJid
-    const sender = msg.key.participant || from
-    const isGroup = from.endsWith("@g.us")
+if (text === '.ping') {
+return reply('pong 🟢')
+}
 
-    // الخاص للمطور فقط
-    if (!isGroup && sender !== OWNER_NUMBER) return
+// ===== owner =====
 
-    const text =
-      msg.message.conversation ||
-      msg.message.extendedTextMessage?.text ||
-      ""
+if (text === '.owner') {
+return reply('مالك البوت: JO YABOKI')
+}
 
-    const args = text.trim().split(" ")
-    const command = args.shift().toLowerCase()
+// ===== AI =====
 
-    const reply = async (t) => {
-      await sock.sendMessage(from, {
-        text: t
-      }, {
-        quoted: msg
-      })
-    }
+if (text.startsWith('.ai ')) {
 
-    // ===== database =====
-    let db = loadDB()
+const q = text.slice(4)
 
-    if (!db[sender]) {
-      db[sender] = {
-        money: 1000,
-        bank: 0,
-        lastSalary: 0,
-        lastDaily: 0
-      }
-    }
+try {
 
-    const user = db[sender]
+const res = await axios.get(`https://api.simsimi.vn/v1/simtalk?text=${encodeURIComponent(q)}&lc=ar`)
 
-    // ================= MENU =================
-    if (command === "مساعدة" || command === "اوامر") {
+return reply(res.data.message)
 
-      return reply(
-`╭──〔 JO YABOKI 〕──╮
+} catch {
+return reply('الذكاء الاصطناعي خربان حالياً')
+}
+}
 
-💰 الاقتصاد
-• راتب
-• يومية
-• فلوسي
-• بنك
-• ايداع
-• سحب
-• توب
-• زرف
+// ===== sticker =====
 
-🎮 الترفيه
-• حب
-• حظ
-• ملصق
+if (text === '.sticker') {
 
-🤖 العامة
-• جو [سؤال]
-• بروفايل
-• بنج
+const quoted =
+m.message.extendedTextMessage?.contextInfo?.quotedMessage
 
-👑 المطور
-• مطور
-• تنصيب
-
-╰────────────────╯`
-      )
-    }
-
-    // ================= ping =================
-    if (command === "بنج") {
-      return reply("🏓 البوت شغال")
-    }
-
-    // ================= developer =================
-    if (command === "مطور") {
-      return reply("👑 المطور: 972527066516")
-    }
-
-    // ================= salary =================
-    if (command === "راتب") {
-
-      const now = Date.now()
-
-      if (now - user.lastSalary < 7200000) {
-        return reply("⏳ انتظر ساعتين")
-      }
-
-      const amount =
-        Math.floor(Math.random() * 4000) + 1000
-
-      user.money += amount
-      user.lastSalary = now
-
-      saveDB(db)
-
-      return reply(`💸 استلمت ${amount}`)
-    }
-
-    // ================= daily =================
-    if (command === "يومية") {
-
-      const now = Date.now()
-
-      if (now - user.lastDaily < 86400000) {
-        return reply("📦 استلمت اليومية اليوم")
-      }
-
-      const amount =
-        Math.floor(Math.random() * 3000) + 500
-
-      user.money += amount
-      user.lastDaily = now
-
-      saveDB(db)
-
-      return reply(`📦 استلمت اليومية: ${amount}`)
-    }
-
-    // ================= wallet =================
-    if (command === "فلوسي" || command === "بنك") {
-
-      return reply(
-`💰 الكاش: ${user.money}
-🏦 البنك: ${user.bank}`
-      )
-    }
-
-    // ================= deposit =================
-    if (command === "ايداع") {
-
-      const amount = parseInt(args[0])
-
-      if (!amount)
-        return reply("اكتب مبلغ")
-
-      if (amount > user.money)
-        return reply("ما معك فلوس")
-
-      user.money -= amount
-      user.bank += amount
-
-      saveDB(db)
-
-      return reply("🏦 تم الايداع")
-    }
-
-    // ================= withdraw =================
-    if (command === "سحب") {
-
-      const amount = parseInt(args[0])
-
-      if (!amount)
-        return reply("اكتب مبلغ")
-
-      if (amount > user.bank)
-        return reply("رصيد البنك قليل")
-
-      user.bank -= amount
-      user.money += amount
-
-      saveDB(db)
-
-      return reply("💵 تم السحب")
-    }
-
-    // ================= steal =================
-    if (command === "زرف") {
-
-      const amount =
-        Math.floor(Math.random() * 1000)
-
-      user.money += amount
-
-      saveDB(db)
-
-      return reply(`🕶️ سرقت ${amount}`)
-    }
-
-    // ================= top =================
-    if (command === "توب") {
-
-      const users = Object.entries(db)
-
-      const top = users
-        .sort((a, b) => b[1].money - a[1].money)
-        .slice(0, 5)
-
-      let txt = "🏆 أغنى الناس:\n\n"
-
-      top.forEach((u, i) => {
-        txt += `${i + 1}. ${u[1].money}\n`
-      })
-
-      return reply(txt)
-    }
-
-    // ================= love =================
-    if (command === "حب") {
-
-      const love =
-        Math.floor(Math.random() * 101)
-
-      return reply(`❤️ نسبة الحب: ${love}%`)
-    }
-
-    // ================= luck =================
-    if (command === "حظ") {
-
-      const luck =
-        Math.floor(Math.random() * 101)
-
-      return reply(`🍀 حظك اليوم: ${luck}%`)
-    }
-
-    // ================= JO AI =================
-    if (command === "جو") {
-
-      const q = args.join(" ")
-
-      if (!q)
-        return reply("اكتب سؤال بعد كلمة جو")
-
-      try {
-
-        const r1 = await axios.get(
-          `https://luminai.my.id/?text=${encodeURIComponent(q)}`
-        )
-
-        let ai =
-          r1.data?.result ||
-          r1.data?.response
-
-        if (ai)
-          return reply(ai)
-
-      } catch {}
-
-      try {
-
-        const r2 = await axios.get(
-          `https://api.simsimi.vn/v2/simtalk?text=${encodeURIComponent(q)}&lc=ar`
-        )
-
-        let ai2 =
-          r2.data?.message
-
-        if (ai2)
-          return reply(ai2)
-
-      } catch {}
-
-      return reply("جو مو قادر يرد حالياً")
-    }
-
-    // ================= profile =================
-    if (command === "بروفايل") {
-
-      try {
-
-        const pp =
-          await sock.profilePictureUrl(sender, "image")
-
-        await sock.sendMessage(from, {
-          image: { url: pp },
-          caption:
-`╭──〔 PROFILE 〕──╮
-
-👤 الاسم: ${msg.pushName}
-
-💰 المال: ${user.money}
-
-🏦 البنك: ${user.bank}
-
-╰────────────────╯`
-        }, { quoted: msg })
-
-      } catch {
-
-        await reply(
-`👤 الاسم: ${msg.pushName}
-
-💰 المال: ${user.money}
-
-🏦 البنك: ${user.bank}`
-        )
-      }
-    }
-
-    // ================= sticker =================
-    if (command === "ملصق") {
-
-      try {
-
-        const quoted =
-          msg.message?.extendedTextMessage?.contextInfo?.quotedMessage
-
-        if (!quoted?.imageMessage)
-          return reply("رد على صورة واكتب ملصق")
-
-        const buffer =
-          await sock.downloadMediaMessage({
-            message: quoted
-          })
-
-        await sock.sendMessage(from, {
-          sticker: buffer
-        }, {
-          quoted: msg
-        })
-
-      } catch (e) {
-
-        console.log(e)
-
-        reply("فشل صنع الملصق")
-      }
-    }
-
-    // ================= install =================
-    if (command === "تنصيب") {
-
-      return reply(
-`📥 تنصيب بوت فرعي
-
-1- ارفع الملفات
-2- npm install
-3- npm start
-4- اربط الرقم
-
-⚡ جاهز`
-      )
-    }
-
-  })
+if (!quoted?.imageMessage) {
+return reply('رد على صورة واكتب .sticker')
+}
+
+const stream = await downloadContentFromMessage(
+quoted.imageMessage,
+'image'
+)
+
+let buffer = Buffer.from([])
+
+for await (const chunk of stream) {
+buffer = Buffer.concat([buffer, chunk])
+}
+
+const input = path.join(__dirname, 'input.jpg')
+const output = path.join(__dirname, 'output.webp')
+
+fs.writeFileSync(input, buffer)
+
+await new Promise((resolve, reject) => {
+ffmpeg(input)
+.outputOptions([
+'-vcodec', 'libwebp',
+'-vf', 'scale=512:512:force_original_aspect_ratio=decrease,fps=15',
+'-lossless', '1',
+'-compression_level', '6',
+'-q:v', '80'
+])
+.save(output)
+.on('end', resolve)
+.on('error', reject)
+})
+
+await sock.sendMessage(from, {
+sticker: fs.readFileSync(output)
+}, { quoted: m })
+
+fs.unlinkSync(input)
+fs.unlinkSync(output)
+}
+
+// ===== رد تلقائي =====
+
+if (text === 'السلام عليكم') {
+reply('وعليكم السلام ورحمة الله 🌸')
+}
+
+if (text === 'هلا') {
+reply('ياهلا والله 🔥')
+}
+
+} catch (e) {
+console.log(e)
+}
+})
 }
 
 startBot()
