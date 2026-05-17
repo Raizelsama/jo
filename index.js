@@ -1,178 +1,78 @@
-const {
-  default: makeWASocket,
-  useMultiFileAuthState,
+import makeWASocket, {
   DisconnectReason,
-  downloadContentFromMessage
-} = require('@whiskeysockets/baileys')
+  useMultiFileAuthState
+} from "@whiskeysockets/baileys"
 
-const fs = require('fs-extra')
-const P = require('pino')
-const axios = require('axios')
-const path = require('path')
-const ffmpeg = require('fluent-ffmpeg')
-const ffmpegPath = require('ffmpeg-static')
+import P from "pino"
+import { Boom } from "@hapi/boom"
 
-ffmpeg.setFfmpegPath(ffmpegPath)
-
-const OWNER = '972527066516@s.whatsapp.net'
-const PHONE_NUMBER = '9647886281208'
+const number = "972527066516"
 
 async function startBot() {
+  const { state, saveCreds } = await useMultiFileAuthState("./session")
 
-const { state, saveCreds } = await useMultiFileAuthState('session')
+  const sock = makeWASocket({
+    logger: P({ level: "silent" }),
+    auth: state,
+    browser: ["Jo Yaboki", "Chrome", "1.0.0"]
+  })
 
-const sock = makeWASocket({
-  auth: state,
-  logger: P({ level: 'silent' })
-})
+  sock.ev.on("creds.update", saveCreds)
 
-sock.ev.on('creds.update', saveCreds)
+  sock.ev.on("connection.update", async (update) => {
+    const { connection, lastDisconnect } = update
 
-if (!state.creds.registered) {
-setTimeout(async () => {
-const code = await sock.requestPairingCode(PHONE_NUMBER)
-console.log('PAIR CODE:', code)
-}, 3000)
-}
+    if (connection === "close") {
+      const shouldReconnect =
+        (lastDisconnect?.error instanceof Boom
+          ? lastDisconnect.error.output.statusCode
+          : 0) !== DisconnectReason.loggedOut
 
-sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
+      console.log("connection closed")
 
-if (connection === 'open') {
-console.log('JO BOT ONLINE 🔥')
-}
+      if (shouldReconnect) {
+        startBot()
+      }
+    } else if (connection === "open") {
+      console.log("BOT CONNECTED")
+    }
+  })
 
-if (connection === 'close') {
-const reconnect =
-lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut
+  if (!sock.authState.creds.registered) {
+    setTimeout(async () => {
+      try {
+        const code = await sock.requestPairingCode(number)
+        console.log(`PAIR CODE: ${code}`)
+      } catch (err) {
+        console.log("PAIR ERROR:", err)
+      }
+    }, 5000)
+  }
 
-if (reconnect) startBot()
-}
-})
+  sock.ev.on("messages.upsert", async ({ messages }) => {
+    const msg = messages[0]
 
-sock.ev.on('messages.upsert', async ({ messages }) => {
+    if (!msg.message || msg.key.fromMe) return
 
-try {
+    const text =
+      msg.message.conversation ||
+      msg.message.extendedTextMessage?.text ||
+      ""
 
-const m = messages[0]
-if (!m.message) return
-if (m.key.fromMe) return
+    const from = msg.key.remoteJid
 
-const from = m.key.remoteJid
+    if (text.toLowerCase() === "ping") {
+      await sock.sendMessage(from, {
+        text: "pong 🐐"
+      })
+    }
 
-const text =
-m.message.conversation ||
-m.message.extendedTextMessage?.text ||
-''
-
-const reply = (txt) => sock.sendMessage(from, { text: txt }, { quoted: m })
-
-// ===== اوامر =====
-
-if (text === '.menu') {
-return reply(`
-╭── JO YABOKI BOT
-│
-├ .ai
-├ .sticker
-├ .ping
-├ .owner
-│
-╰──────────
-`)
-}
-
-// ===== ping =====
-
-if (text === '.ping') {
-return reply('pong 🟢')
-}
-
-// ===== owner =====
-
-if (text === '.owner') {
-return reply('مالك البوت: JO YABOKI')
-}
-
-// ===== AI =====
-
-if (text.startsWith('.ai ')) {
-
-const q = text.slice(4)
-
-try {
-
-const res = await axios.get(`https://api.simsimi.vn/v1/simtalk?text=${encodeURIComponent(q)}&lc=ar`)
-
-return reply(res.data.message)
-
-} catch {
-return reply('الذكاء الاصطناعي خربان حالياً')
-}
-}
-
-// ===== sticker =====
-
-if (text === '.sticker') {
-
-const quoted =
-m.message.extendedTextMessage?.contextInfo?.quotedMessage
-
-if (!quoted?.imageMessage) {
-return reply('رد على صورة واكتب .sticker')
-}
-
-const stream = await downloadContentFromMessage(
-quoted.imageMessage,
-'image'
-)
-
-let buffer = Buffer.from([])
-
-for await (const chunk of stream) {
-buffer = Buffer.concat([buffer, chunk])
-}
-
-const input = path.join(__dirname, 'input.jpg')
-const output = path.join(__dirname, 'output.webp')
-
-fs.writeFileSync(input, buffer)
-
-await new Promise((resolve, reject) => {
-ffmpeg(input)
-.outputOptions([
-'-vcodec', 'libwebp',
-'-vf', 'scale=512:512:force_original_aspect_ratio=decrease,fps=15',
-'-lossless', '1',
-'-compression_level', '6',
-'-q:v', '80'
-])
-.save(output)
-.on('end', resolve)
-.on('error', reject)
-})
-
-await sock.sendMessage(from, {
-sticker: fs.readFileSync(output)
-}, { quoted: m })
-
-fs.unlinkSync(input)
-fs.unlinkSync(output)
-}
-
-// ===== رد تلقائي =====
-
-if (text === 'السلام عليكم') {
-reply('وعليكم السلام ورحمة الله 🌸')
-}
-
-if (text === 'هلا') {
-reply('ياهلا والله 🔥')
-}
-
-} catch (e) {
-console.log(e)
-}
-})
+    if (text.toLowerCase() === "بوت") {
+      await sock.sendMessage(from, {
+        text: "هلا انا بوت جو يابوكي 🔥"
+      })
+    }
+  })
 }
 
 startBot()
