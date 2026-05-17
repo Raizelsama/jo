@@ -295,22 +295,38 @@ async function startBot() {
       const q = args.join(" ")
 
       if (!q)
-        return reply("اكتب كلام بعد كلمة جو")
+        return reply("اكتب سؤال بعد كلمة جو")
 
       try {
 
-        const res = await axios.get(
-          `https://api.popcat.xyz/chatbot?msg=${encodeURIComponent(q)}&owner=Raizel&botname=JO`
+        const r1 = await axios.get(
+          `https://luminai.my.id/?text=${encodeURIComponent(q)}`
         )
 
-        return reply(res.data.response)
+        let ai =
+          r1.data?.result ||
+          r1.data?.response
 
-      } catch (e) {
+        if (ai)
+          return reply(ai)
 
-        console.log(e)
+      } catch {}
 
-        return reply("تعذر الاتصال بالذكاء")
-      }
+      try {
+
+        const r2 = await axios.get(
+          `https://api.simsimi.vn/v2/simtalk?text=${encodeURIComponent(q)}&lc=ar`
+        )
+
+        let ai2 =
+          r2.data?.message
+
+        if (ai2)
+          return reply(ai2)
+
+      } catch {}
+
+      return reply("جو مو قادر يرد حالياً")
     }
 
     // ================= profile =================
@@ -353,23 +369,18 @@ async function startBot() {
       try {
 
         const quoted =
-          msg.message?.extendedTextMessage?.contextInfo
+          msg.message?.extendedTextMessage?.contextInfo?.quotedMessage
 
-        if (!quoted)
+        if (!quoted?.imageMessage)
           return reply("رد على صورة واكتب ملصق")
 
-        const media =
+        const buffer =
           await sock.downloadMediaMessage({
-            key: {
-              remoteJid: from,
-              id: quoted.stanzaId,
-              participant: quoted.participant
-            },
-            message: quoted.quotedMessage
+            message: quoted
           })
 
         await sock.sendMessage(from, {
-          sticker: media
+          sticker: buffer
         }, {
           quoted: msg
         })
