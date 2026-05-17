@@ -84,8 +84,6 @@ async function startBot() {
       msg.message.extendedTextMessage?.text ||
       ""
 
-    const lower = text.toLowerCase().trim()
-
     const args = text.trim().split(" ")
     const command = args.shift().toLowerCase()
 
@@ -124,7 +122,6 @@ async function startBot() {
 • بنك
 • ايداع
 • سحب
-• تحويل
 • توب
 • زرف
 
@@ -160,9 +157,8 @@ async function startBot() {
     if (command === "راتب") {
 
       const now = Date.now()
-      const cooldownTime = 2 * 60 * 60 * 1000
 
-      if (now - user.lastSalary < cooldownTime) {
+      if (now - user.lastSalary < 7200000) {
         return reply("⏳ انتظر ساعتين")
       }
 
@@ -181,9 +177,8 @@ async function startBot() {
     if (command === "يومية") {
 
       const now = Date.now()
-      const cooldownTime = 24 * 60 * 60 * 1000
 
-      if (now - user.lastDaily < cooldownTime) {
+      if (now - user.lastDaily < 86400000) {
         return reply("📦 استلمت اليومية اليوم")
       }
 
@@ -304,26 +299,17 @@ async function startBot() {
 
       try {
 
-        const res = await axios.post(
-          "https://api.affiliateplus.xyz/api/chatbot",
-          {
-            message: q,
-            botname: "JO YABOKI",
-            ownername: "Raizel",
-            user: sender
-          }
+        const res = await axios.get(
+          `https://api.popcat.xyz/chatbot?msg=${encodeURIComponent(q)}&owner=Raizel&botname=JO`
         )
 
-        const ai =
-          res.data.message || "ما فهمت"
-
-        return reply(ai)
+        return reply(res.data.response)
 
       } catch (e) {
 
         console.log(e)
 
-        return reply("جو مشغول حالياً")
+        return reply("تعذر الاتصال بالذكاء")
       }
     }
 
@@ -352,15 +338,11 @@ async function startBot() {
       } catch {
 
         await reply(
-`╭──〔 PROFILE 〕──╮
-
-👤 الاسم: ${msg.pushName}
+`👤 الاسم: ${msg.pushName}
 
 💰 المال: ${user.money}
 
-🏦 البنك: ${user.bank}
-
-╰────────────────╯`
+🏦 البنك: ${user.bank}`
         )
       }
     }
@@ -368,29 +350,35 @@ async function startBot() {
     // ================= sticker =================
     if (command === "ملصق") {
 
-      const quoted =
-        msg.message?.extendedTextMessage?.contextInfo?.quotedMessage
-
-      const image =
-        msg.message?.imageMessage ||
-        quoted?.imageMessage
-
-      if (!image)
-        return reply("📷 رد على صورة")
-
       try {
 
-        const buffer =
-          await sock.downloadMediaMessage(msg)
+        const quoted =
+          msg.message?.extendedTextMessage?.contextInfo
+
+        if (!quoted)
+          return reply("رد على صورة واكتب ملصق")
+
+        const media =
+          await sock.downloadMediaMessage({
+            key: {
+              remoteJid: from,
+              id: quoted.stanzaId,
+              participant: quoted.participant
+            },
+            message: quoted.quotedMessage
+          })
 
         await sock.sendMessage(from, {
-          sticker: buffer
+          sticker: media
         }, {
           quoted: msg
         })
 
-      } catch {
-        return reply("فشل صنع الملصق")
+      } catch (e) {
+
+        console.log(e)
+
+        reply("فشل صنع الملصق")
       }
     }
 
@@ -401,11 +389,11 @@ async function startBot() {
 `📥 تنصيب بوت فرعي
 
 1- ارفع الملفات
-2- شغل npm install
-3- شغل npm start
-4- اربط الرقم بالكود
+2- npm install
+3- npm start
+4- اربط الرقم
 
-⚡ البوت جاهز`
+⚡ جاهز`
       )
     }
 
