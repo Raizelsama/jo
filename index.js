@@ -20,19 +20,10 @@ if (!fs.existsSync(dbFile)) {
 const loadDB = () => fs.readJsonSync(dbFile)
 const saveDB = (d) => fs.writeJsonSync(dbFile, d)
 
-// منع التكرار
-const cooldown = new Map()
-function canTalk(key, time = 40000) {
-  const now = Date.now()
-  const last = cooldown.get(key) || 0
-  if (now - last < time) return false
-  cooldown.set(key, now)
-  return true
-}
-
 async function startBot() {
 
-  const { state, saveCreds } = await useMultiFileAuthState("session")
+  const { state, saveCreds } =
+    await useMultiFileAuthState("session")
 
   const sock = makeWASocket({
     auth: state,
@@ -41,15 +32,22 @@ async function startBot() {
 
   sock.ev.on("creds.update", saveCreds)
 
-  // pairing
+  // ===== pairing =====
   if (!state.creds.registered) {
+
     setTimeout(async () => {
-      const code = await sock.requestPairingCode(PHONE_NUMBER)
+
+      const code =
+        await sock.requestPairingCode(PHONE_NUMBER)
+
       console.log("PAIRING CODE:", code)
+
     }, 3000)
   }
 
+  // ===== connection =====
   sock.ev.on("connection.update", (update) => {
+
     const { connection, lastDisconnect } = update
 
     if (connection === "open") {
@@ -57,6 +55,7 @@ async function startBot() {
     }
 
     if (connection === "close") {
+
       const reconnect =
         lastDisconnect?.error?.output?.statusCode !==
         DisconnectReason.loggedOut
@@ -65,19 +64,19 @@ async function startBot() {
     }
   })
 
+  // ===== messages =====
   sock.ev.on("messages.upsert", async ({ messages }) => {
 
     const msg = messages[0]
-    if (!msg.message) return
 
-    // مهم: منع رد البوت على نفسه
+    if (!msg.message) return
     if (msg.key.fromMe) return
 
     const from = msg.key.remoteJid
     const sender = msg.key.participant || from
     const isGroup = from.endsWith("@g.us")
 
-    // خاص للمطور فقط
+    // الخاص للمطور فقط
     if (!isGroup && sender !== OWNER_NUMBER) return
 
     const text =
@@ -85,58 +84,79 @@ async function startBot() {
       msg.message.extendedTextMessage?.text ||
       ""
 
-    const lower = text.trim().toLowerCase()
+    const lower = text.toLowerCase().trim()
 
     const args = text.trim().split(" ")
     const command = args.shift().toLowerCase()
 
-    const reply = (t) =>
-      sock.sendMessage(from, { text: t }, { quoted: msg })
+    const reply = async (t) => {
+      await sock.sendMessage(from, {
+        text: t
+      }, {
+        quoted: msg
+      })
+    }
 
-    // قاعدة بيانات
+    // ===== database =====
     let db = loadDB()
 
     if (!db[sender]) {
       db[sender] = {
         money: 1000,
         bank: 0,
-        lastSalary: 0
+        lastSalary: 0,
+        lastDaily: 0
       }
     }
 
     const user = db[sender]
 
-    // ================= القائمة =================
+    // ================= MENU =================
     if (command === "مساعدة" || command === "اوامر") {
+
       return reply(
 `╭──〔 JO YABOKI 〕──╮
 
 💰 الاقتصاد
 • راتب
+• يومية
 • فلوسي
 • بنك
 • ايداع
 • سحب
+• تحويل
+• توب
+• زرف
 
-🤖 الذكاء
-• ذكاء
+🎮 الترفيه
+• حب
+• حظ
+• ملصق
 
-👤 عام
+🤖 العامة
+• جو [سؤال]
 • بروفايل
+• بنج
 
-👑 مطور
+👑 المطور
 • مطور
+• تنصيب
 
 ╰────────────────╯`
       )
     }
 
-    // ================= المطور =================
-    if (lower.includes("المطور")) {
-      return reply("المطور: " + OWNER_NUMBER.replace("@s.whatsapp.net", ""))
+    // ================= ping =================
+    if (command === "بنج") {
+      return reply("🏓 البوت شغال")
     }
 
-    // ================= راتب =================
+    // ================= developer =================
+    if (command === "مطور") {
+      return reply("👑 المطور: 972527066516")
+    }
+
+    // ================= salary =================
     if (command === "راتب") {
 
       const now = Date.now()
@@ -146,68 +166,246 @@ async function startBot() {
         return reply("⏳ انتظر ساعتين")
       }
 
-      const amount = Math.floor(Math.random() * 4000) + 1000
+      const amount =
+        Math.floor(Math.random() * 4000) + 1000
+
       user.money += amount
       user.lastSalary = now
 
       saveDB(db)
-      return reply("💸 استلمت " + amount)
+
+      return reply(`💸 استلمت ${amount}`)
     }
 
-    // ================= فلوس =================
+    // ================= daily =================
+    if (command === "يومية") {
+
+      const now = Date.now()
+      const cooldownTime = 24 * 60 * 60 * 1000
+
+      if (now - user.lastDaily < cooldownTime) {
+        return reply("📦 استلمت اليومية اليوم")
+      }
+
+      const amount =
+        Math.floor(Math.random() * 3000) + 500
+
+      user.money += amount
+      user.lastDaily = now
+
+      saveDB(db)
+
+      return reply(`📦 استلمت اليومية: ${amount}`)
+    }
+
+    // ================= wallet =================
     if (command === "فلوسي" || command === "بنك") {
-      return reply(`💰 ${user.money}\n🏦 ${user.bank}`)
+
+      return reply(
+`💰 الكاش: ${user.money}
+🏦 البنك: ${user.bank}`
+      )
     }
 
-    // ================= ايداع =================
+    // ================= deposit =================
     if (command === "ايداع") {
-      let amount = parseInt(args[0])
-      if (!amount) return reply("اكتب مبلغ")
-      if (amount > user.money) return reply("ما معك كاش")
+
+      const amount = parseInt(args[0])
+
+      if (!amount)
+        return reply("اكتب مبلغ")
+
+      if (amount > user.money)
+        return reply("ما معك فلوس")
 
       user.money -= amount
       user.bank += amount
 
       saveDB(db)
+
       return reply("🏦 تم الايداع")
     }
 
-    // ================= سحب =================
+    // ================= withdraw =================
     if (command === "سحب") {
-      let amount = parseInt(args[0])
-      if (!amount) return reply("اكتب مبلغ")
-      if (amount > user.bank) return reply("رصيد البنك قليل")
+
+      const amount = parseInt(args[0])
+
+      if (!amount)
+        return reply("اكتب مبلغ")
+
+      if (amount > user.bank)
+        return reply("رصيد البنك قليل")
 
       user.bank -= amount
       user.money += amount
 
       saveDB(db)
+
       return reply("💵 تم السحب")
     }
 
-    // ================= ذكاء =================
-    if (command === "ذكاء") {
-      let q = args.join(" ")
-      if (!q) return reply("اكتب سؤال")
+    // ================= steal =================
+    if (command === "زرف") {
+
+      const amount =
+        Math.floor(Math.random() * 1000)
+
+      user.money += amount
+
+      saveDB(db)
+
+      return reply(`🕶️ سرقت ${amount}`)
+    }
+
+    // ================= top =================
+    if (command === "توب") {
+
+      const users = Object.entries(db)
+
+      const top = users
+        .sort((a, b) => b[1].money - a[1].money)
+        .slice(0, 5)
+
+      let txt = "🏆 أغنى الناس:\n\n"
+
+      top.forEach((u, i) => {
+        txt += `${i + 1}. ${u[1].money}\n`
+      })
+
+      return reply(txt)
+    }
+
+    // ================= love =================
+    if (command === "حب") {
+
+      const love =
+        Math.floor(Math.random() * 101)
+
+      return reply(`❤️ نسبة الحب: ${love}%`)
+    }
+
+    // ================= luck =================
+    if (command === "حظ") {
+
+      const luck =
+        Math.floor(Math.random() * 101)
+
+      return reply(`🍀 حظك اليوم: ${luck}%`)
+    }
+
+    // ================= JO AI =================
+    if (command === "جو") {
+
+      const q = args.join(" ")
+
+      if (!q)
+        return reply("اكتب كلام بعد كلمة جو")
 
       try {
-        const res = await axios.get("https://api.simsimi.vn/v2/simtalk", {
-          params: { text: q, lc: "ar" }
-        })
 
-        return reply("🤖 " + res.data.message)
+        const res = await axios.post(
+          "https://api.affiliateplus.xyz/api/chatbot",
+          {
+            message: q,
+            botname: "JO YABOKI",
+            ownername: "Raizel",
+            user: sender
+          }
+        )
 
-      } catch {
-        return reply("الذكاء مشغول")
+        const ai =
+          res.data.message || "ما فهمت"
+
+        return reply(ai)
+
+      } catch (e) {
+
+        console.log(e)
+
+        return reply("جو مشغول حالياً")
       }
     }
 
-    // ================= بروفايل =================
+    // ================= profile =================
     if (command === "بروفايل") {
-      return reply(
-`👤 الاسم: ${msg.pushName}
+
+      try {
+
+        const pp =
+          await sock.profilePictureUrl(sender, "image")
+
+        await sock.sendMessage(from, {
+          image: { url: pp },
+          caption:
+`╭──〔 PROFILE 〕──╮
+
+👤 الاسم: ${msg.pushName}
+
 💰 المال: ${user.money}
-🏦 البنك: ${user.bank}`
+
+🏦 البنك: ${user.bank}
+
+╰────────────────╯`
+        }, { quoted: msg })
+
+      } catch {
+
+        await reply(
+`╭──〔 PROFILE 〕──╮
+
+👤 الاسم: ${msg.pushName}
+
+💰 المال: ${user.money}
+
+🏦 البنك: ${user.bank}
+
+╰────────────────╯`
+        )
+      }
+    }
+
+    // ================= sticker =================
+    if (command === "ملصق") {
+
+      const quoted =
+        msg.message?.extendedTextMessage?.contextInfo?.quotedMessage
+
+      const image =
+        msg.message?.imageMessage ||
+        quoted?.imageMessage
+
+      if (!image)
+        return reply("📷 رد على صورة")
+
+      try {
+
+        const buffer =
+          await sock.downloadMediaMessage(msg)
+
+        await sock.sendMessage(from, {
+          sticker: buffer
+        }, {
+          quoted: msg
+        })
+
+      } catch {
+        return reply("فشل صنع الملصق")
+      }
+    }
+
+    // ================= install =================
+    if (command === "تنصيب") {
+
+      return reply(
+`📥 تنصيب بوت فرعي
+
+1- ارفع الملفات
+2- شغل npm install
+3- شغل npm start
+4- اربط الرقم بالكود
+
+⚡ البوت جاهز`
       )
     }
 
